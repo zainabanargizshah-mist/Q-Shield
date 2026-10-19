@@ -66,7 +66,6 @@ with st.sidebar:
 
 # ── Header ───────────────────────────────────────────────────────────
 st.markdown("# 🗺️ PQC Migration Planner")
-st.markdown('<span class="demo-badge">DEMO DATA</span>', unsafe_allow_html=True)
 st.markdown(
     "Phased migration recommendations aligned with NIST PQC standards. "
     "'Completed' status means a user has recorded completion — it is not inferred from algorithm presence."
@@ -76,7 +75,7 @@ assets = db.get_all_assets()
 assessments = db.get_all_assessments()
 
 if not assets:
-    st.info("📭 No assets loaded. Go to **Overview** to load demo data.")
+    st.info("📭 No assets loaded. Use **Asset Inventory** to load demo data or upload a CSV/JSON file.")
     st.stop()
 
 if not assessments:

@@ -70,8 +70,39 @@ with st.sidebar:
 
 # ── Header ───────────────────────────────────────────────────────────
 st.markdown("# 📋 Cryptographic Asset Inventory")
-st.markdown('<span class="demo-badge">DEMO DATA</span>', unsafe_allow_html=True)
 st.markdown("Manage your organization's cryptographic asset catalog.")
+
+load_col, clear_col = st.columns([1, 1])
+with load_col:
+    if st.button("📥 Load Demo Data", type="primary", help="Load the bundled synthetic dataset into the inventory"):
+        demo_assets = load_demo_assets()
+        count = import_assets_to_db(db, demo_assets, source="demo_dataset")
+        for asset in demo_assets:
+            asset_data = asset.to_dict()
+            finding = analyze_asset(asset_data)
+            score = compute_risk_score(asset_data, finding)
+            db.save_assessment(asset_data["asset_id"], finding.to_dict(), score.to_dict())
+        db.log_activity("Assessment completed", f"Assessed {count} demo assets", count)
+        st.success(f"✅ Loaded and assessed {count} demo assets.")
+        st.rerun()
+
+with clear_col:
+    if db.asset_count() and st.button("🗑️ Clear Inventory", help="Remove saved assets and assessments"):
+        st.session_state["confirm_clear_inventory"] = True
+
+if st.session_state.get("confirm_clear_inventory"):
+    st.warning("This removes all saved assets and their assessments. Uploaded files and demo data can be loaded again.")
+    confirm_col, cancel_col = st.columns(2)
+    with confirm_col:
+        if st.button("Confirm Clear Inventory", type="primary"):
+            db.delete_all_assets()
+            db.log_activity("Cleared all assets")
+            st.session_state["confirm_clear_inventory"] = False
+            st.rerun()
+    with cancel_col:
+        if st.button("Cancel"):
+            st.session_state["confirm_clear_inventory"] = False
+            st.rerun()
 
 # ── Upload Section ───────────────────────────────────────────────────
 with st.expander("📤 Upload Assets (CSV or JSON)", expanded=False):
@@ -124,8 +155,7 @@ df = get_assets_dataframe(db)
 
 if df.empty:
     st.info(
-        "📭 **No assets in inventory.** Load demo data from the Overview page "
-        "or upload a CSV/JSON above."
+        "📭 **No assets in inventory.** Click **Load Demo Data** or upload a CSV/JSON above."
     )
     st.stop()
 

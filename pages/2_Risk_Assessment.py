@@ -57,7 +57,6 @@ with st.sidebar:
 
 # ── Header ───────────────────────────────────────────────────────────
 st.markdown("# ⚡ Risk Assessment")
-st.markdown('<span class="demo-badge">DEMO DATA</span>', unsafe_allow_html=True)
 st.markdown(
     "Deterministic cryptographic detection and transparent risk scoring. "
     "Scores are decision-support estimates, not certified security ratings."
@@ -66,7 +65,7 @@ st.markdown(
 assets = db.get_all_assets()
 
 if not assets:
-    st.info("📭 No assets loaded. Go to **Overview** to load demo data or **Asset Inventory** to upload.")
+    st.info("📭 No assets loaded. Use **Asset Inventory** to load demo data or upload a CSV/JSON file.")
     st.stop()
 
 # ── Run Assessment ───────────────────────────────────────────────────

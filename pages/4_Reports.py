@@ -55,7 +55,6 @@ with st.sidebar:
 
 # ── Header ───────────────────────────────────────────────────────────
 st.markdown("# 📄 Reports & Exports")
-st.markdown('<span class="demo-badge">DEMO DATA</span>', unsafe_allow_html=True)
 st.markdown(
     "Generate and download assessment reports from the current data. "
     "Reports contain decision-support findings, not compliance certifications."
@@ -66,7 +65,7 @@ assessments = db.get_all_assessments()
 stats = db.get_summary_stats()
 
 if not assets:
-    st.info("📭 No assets loaded. Go to **Overview** to load demo data.")
+    st.info("📭 No assets loaded. Use **Asset Inventory** to load demo data or upload a CSV/JSON file.")
     st.stop()
 
 if not assessments:

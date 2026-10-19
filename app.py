@@ -216,7 +216,7 @@ def _run_assessment(database: Database):
 
 st.markdown(f"""
 <div class="main-header">
-    <h1>🛡️ Q-Shield <span class="demo-badge">DEMO DATA</span></h1>
+    <h1>🛡️ Q-Shield</h1>
     <p>{__app_subtitle__}</p>
 </div>
 """, unsafe_allow_html=True)
