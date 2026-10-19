@@ -242,7 +242,8 @@ def generate_pdf_report(
     for lim in limitations:
         pdf.cell(0, 4, f"  - {lim}", new_x="LMARGIN", new_y="NEXT")
 
-    return pdf.output()
+    # FPDF2 currently returns a bytearray; Streamlit's downloader expects bytes.
+    return bytes(pdf.output())
 
 
 def _safe_str(text) -> str:

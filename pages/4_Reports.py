@@ -7,6 +7,8 @@ All reports are generated from current assessment data, not static templates.
 
 import streamlit as st
 import pandas as pd
+import hashlib
+import json
 from datetime import datetime, timezone
 
 from qshield.database import Database
@@ -138,23 +140,38 @@ with col_b:
 with col_c:
     st.markdown("#### 📄 Full PDF Report")
     st.caption("Professional report with executive summary, findings, recommendations, and methodology.")
+
+    report_source = json.dumps(
+        {"assets": assets, "assessments": assessments},
+        sort_keys=True,
+        default=str,
+    )
+    report_fingerprint = hashlib.sha256(report_source.encode("utf-8")).hexdigest()
+    if st.session_state.get("pdf_report_fingerprint") != report_fingerprint:
+        st.session_state.pop("pdf_report_bytes", None)
+        st.session_state["pdf_report_fingerprint"] = report_fingerprint
+
     if st.button("📄 Generate PDF Report", type="primary", use_container_width=True):
         with st.spinner("Generating PDF report..."):
             try:
-                pdf_bytes = generate_pdf_report(
+                st.session_state["pdf_report_bytes"] = generate_pdf_report(
                     assets, finding_dicts, score_dicts, recs, stats,
-                )
-                st.download_button(
-                    "📥 Download PDF Report",
-                    pdf_bytes,
-                    file_name=f"qshield_report_{now}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
                 )
                 st.success("✅ PDF report generated successfully.")
                 db.log_activity("Report generated", "PDF assessment report")
             except Exception as e:
+                st.session_state.pop("pdf_report_bytes", None)
                 st.error(f"❌ Error generating PDF: {str(e)[:200]}")
+
+    pdf_bytes = st.session_state.get("pdf_report_bytes")
+    if pdf_bytes:
+        st.download_button(
+            "📥 Download PDF Report",
+            pdf_bytes,
+            file_name=f"qshield_report_{now}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
 
 st.markdown("---")
 
