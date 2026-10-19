@@ -13,8 +13,11 @@ Security controls:
 """
 
 import os
-import json
-from typing import Optional, List, Dict
+from typing import Dict
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from qshield.models import NIST_PQC_STANDARDS, DEFAULT_SCORING_CONFIG
 
@@ -79,33 +82,43 @@ class AIAssistant:
     """
 
     def __init__(self):
-        self.api_key = self._get_api_key()
-        self.model = os.environ.get("QSHIELD_AI_MODEL", "gpt-4o-mini")
-        self.available = bool(self.api_key)
+        self.provider, self.api_key = self._get_credentials()
+        self.model = (
+            os.environ.get("QSHIELD_GEMINI_MODEL", "gemini-3.8-flash")
+            if self.provider == "Gemini"
+            else os.environ.get("QSHIELD_AI_MODEL", "gpt-4o-mini")
+        )
+        self.available = bool(self.provider and self.api_key)
         self._client = None
 
-    def _get_api_key(self) -> Optional[str]:
-        """Get API key from environment or Streamlit secrets."""
-        key = os.environ.get("OPENAI_API_KEY", "")
-        if key and key != "your_openai_api_key_here":
-            return key
+    def _get_credentials(self):
+        """Prefer Gemini credentials, with OpenAI retained as a fallback provider."""
+        providers = (("Gemini", ("GEMINI_API_KEY", "GOOGLE_API_KEY")), ("OpenAI", ("OPENAI_API_KEY",)))
+        for provider, names in providers:
+            for name in names:
+                key = os.environ.get(name, "")
+                if key and not key.startswith("your_"):
+                    return provider, key
         try:
             import streamlit as st
-            key = st.secrets.get("OPENAI_API_KEY", "")
-            if key and key != "your_openai_api_key_here":
-                return key
+            for provider, names in providers:
+                for name in names:
+                    key = st.secrets.get(name, "")
+                    if key and not key.startswith("your_"):
+                        return provider, key
         except Exception:
             pass
-        return None
+        return None, None
 
     def _get_client(self):
         if self._client is None and self.available:
             try:
-                from openai import OpenAI
-                self._client = OpenAI(
-                    api_key=self.api_key,
-                    timeout=30.0,
-                )
+                if self.provider == "Gemini":
+                    from google import genai
+                    self._client = genai.Client(api_key=self.api_key)
+                else:
+                    from openai import OpenAI
+                    self._client = OpenAI(api_key=self.api_key, timeout=30.0)
             except ImportError:
                 self.available = False
             except Exception:
@@ -163,25 +176,36 @@ Scores are decision-support estimates (0-100), NOT certified ratings."""
         if not client:
             return self._fallback_response(prompt)
 
-        messages = [
-            {"role": "system", "content": self._build_system_prompt()},
-        ]
+        user_content = ""
         if context:
-            # Send minimal context — only summary data, not raw uploads
-            messages.append({
-                "role": "user",
-                "content": f"Assessment context (summary only):\n{context[:2000]}"
-            })
-        messages.append({"role": "user", "content": prompt[:1000]})
+            user_content += f"Assessment context (sanitized summary only):\n{context[:3500]}\n\n"
+        user_content += f"User question:\n{prompt[:1000]}"
 
         try:
-            response = client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=1500,
-                temperature=0.3,
-            )
-            result = response.choices[0].message.content
+            if self.provider == "Gemini":
+                from google.genai import types
+                response = client.models.generate_content(
+                    model=self.model,
+                    contents=user_content,
+                    config=types.GenerateContentConfig(
+                        system_instruction=self._build_system_prompt(),
+                        max_output_tokens=1500,
+                    ),
+                )
+                result = response.text
+            else:
+                response = client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": self._build_system_prompt()},
+                        {"role": "user", "content": user_content},
+                    ],
+                    max_tokens=1500,
+                    temperature=0.3,
+                )
+                result = response.choices[0].message.content
+            if not result:
+                raise ValueError("The AI provider returned an empty response")
             return (
                 result + "\n\n---\n*⚠️ AI-generated recommendation — "
                 "requires review by qualified security professionals.*"
@@ -307,7 +331,7 @@ Rule-based detection and risk scoring are fully functional without AI.
 - Report generation
 
 **To enable AI assistant:**
-Set `OPENAI_API_KEY` in your environment variables or Streamlit secrets.
+Set `GEMINI_API_KEY` in your environment variables or Streamlit secrets.
 
 **Key references:**
 - NIST FIPS 203 (ML-KEM): https://csrc.nist.gov/pubs/fips/203/final
@@ -315,6 +339,10 @@ Set `OPENAI_API_KEY` in your environment variables or Streamlit secrets.
 - NIST FIPS 205 (SLH-DSA): https://csrc.nist.gov/pubs/fips/205/final
 
 *Rule-based fallback active. All analysis is deterministic and reproducible.*"""
+
+    @property
+    def provider_name(self) -> str:
+        return self.provider or "Unavailable"
 
     def is_available(self) -> bool:
         return self.available

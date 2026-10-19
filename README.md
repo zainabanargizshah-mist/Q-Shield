@@ -112,7 +112,7 @@ q-shield/
 
 ## Optional AI Configuration
 
-The app works fully without an AI API key. To enable AI-assisted analysis:
+The app works fully without an AI API key. The Migration Planner uses Google Gemini when `GEMINI_API_KEY` is configured. OpenAI remains available as a fallback provider.
 
 ### Local Development
 
@@ -120,7 +120,7 @@ Create a `.env` file (never commit this):
 
 ```bash
 cp .env.example .env
-# Edit .env and set: OPENAI_API_KEY=sk-your-key-here
+# Edit .env and set GEMINI_API_KEY to your Google AI Studio key
 ```
 
 ### Streamlit Community Cloud
@@ -130,7 +130,7 @@ Add secrets in the Streamlit dashboard:
 1. Go to your app's **Settings → Secrets**
 2. Add:
    ```toml
-   OPENAI_API_KEY = "sk-your-key-here"
+   GEMINI_API_KEY = "your-gemini-api-key"
    ```
 
 ## Deploy to Streamlit Community Cloud
@@ -139,7 +139,7 @@ Add secrets in the Streamlit dashboard:
 2. Go to [share.streamlit.io](https://share.streamlit.io)
 3. Click **New app** → select your repo
 4. Set **Main file path** to `app.py`
-5. (Optional) Add `OPENAI_API_KEY` in **Advanced settings → Secrets**
+5. (Optional) Add `GEMINI_API_KEY` in **Advanced settings → Secrets**
 6. Click **Deploy**
 
 No Docker or paid infrastructure required.

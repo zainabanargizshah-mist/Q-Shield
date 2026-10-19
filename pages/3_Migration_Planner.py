@@ -7,6 +7,7 @@ framework, and allows migration status tracking.
 
 import streamlit as st
 import pandas as pd
+import json
 
 from qshield.database import Database
 from qshield.detection import analyze_asset
@@ -213,21 +214,42 @@ st.markdown("### 🤖 AI Migration Assistant")
 
 ai = AIAssistant()
 if ai.is_available():
-    st.success("✅ AI assistant connected")
+    st.success(f"✅ {ai.provider_name} assistant ready · `{ai.model}`")
 else:
     st.info(
         "💡 AI assistant is not configured. Rule-based recommendations are active. "
-        "Set `OPENAI_API_KEY` to enable AI-powered analysis."
+        "Set `GEMINI_API_KEY` in your local `.env` or Streamlit secrets to enable Gemini."
     )
 
-# Build context summary for AI (minimal data)
-context_summary = f"Total assets: {len(assets)}. "
-vuln_count = sum(1 for a in assessments if a.get("is_quantum_vulnerable"))
-context_summary += f"Quantum-vulnerable: {vuln_count}. "
-pqc_count = sum(1 for a in assessments if a.get("is_pqc"))
-context_summary += f"PQC in use: {pqc_count}. "
-review_count = sum(1 for a in assessments if a.get("needs_review"))
-context_summary += f"Needs review: {review_count}."
+# Send aggregate counts and a few anonymized risk records only. Asset IDs,
+# names, owners, notes, and uploaded source data are excluded.
+context_summary = {
+    "asset_count": len(assets),
+    "assessment_count": len(assessments),
+    "quantum_vulnerable_count": sum(bool(a.get("is_quantum_vulnerable")) for a in assessments),
+    "pqc_in_use_count": sum(bool(a.get("is_pqc")) for a in assessments),
+    "needs_review_count": sum(bool(a.get("needs_review")) for a in assessments),
+    "highest_risk_assets": [],
+}
+for index, assessment in enumerate(assessments[:8], start=1):
+    asset = asset_map.get(assessment.get("asset_id"), {})
+    context_summary["highest_risk_assets"].append({
+        "label": f"Asset {index}",
+        "algorithm": asset.get("cryptographic_algorithm", "Unknown"),
+        "purpose": asset.get("cryptographic_purpose", "Unknown"),
+        "risk_score": assessment.get("risk_score"),
+        "risk_level": assessment.get("risk_level", "Unknown"),
+        "quantum_vulnerable": bool(assessment.get("is_quantum_vulnerable")),
+        "pqc_in_use": bool(assessment.get("is_pqc")),
+        "needs_review": bool(assessment.get("needs_review")),
+        "migration_status": asset.get("migration_status", "Not Started"),
+    })
+context_summary = json.dumps(context_summary, ensure_ascii=True)
+
+st.caption(
+    "On each question, Q-Shield sends Gemini your question and a limited, "
+    "anonymized assessment summary. Asset names, IDs, owners, notes, and raw uploads are excluded."
+)
 
 prompt_options = [
     "Generate an executive summary of this assessment",
