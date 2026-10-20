@@ -90,6 +90,9 @@ class AIAssistant:
         )
         self.available = bool(self.provider and self.api_key)
         self._client = None
+        self.last_error = None
+        self.last_notice = None
+        self.last_response_from_ai = False
 
     def _get_credentials(self):
         """Prefer Gemini credentials, with OpenAI retained as a fallback provider."""
@@ -115,7 +118,11 @@ class AIAssistant:
             try:
                 if self.provider == "Gemini":
                     from google import genai
-                    self._client = genai.Client(api_key=self.api_key)
+                    from google.genai import types
+                    self._client = genai.Client(
+                        api_key=self.api_key,
+                        http_options=types.HttpOptions(timeout=30_000),
+                    )
                 else:
                     from openai import OpenAI
                     self._client = OpenAI(api_key=self.api_key, timeout=30.0)
@@ -169,11 +176,16 @@ Scores are decision-support estimates (0-100), NOT certified ratings."""
         Query the AI assistant. Returns a response string.
         Falls back to rule-based response if AI unavailable.
         """
+        self.last_error = None
+        self.last_notice = None
+        self.last_response_from_ai = False
         if not self.available:
+            self.last_error = "No AI provider is configured."
             return self._fallback_response(prompt)
 
         client = self._get_client()
         if not client:
+            self.last_error = "The AI client could not be initialized. Check the installed provider package."
             return self._fallback_response(prompt)
 
         user_content = ""
@@ -184,14 +196,32 @@ Scores are decision-support estimates (0-100), NOT certified ratings."""
         try:
             if self.provider == "Gemini":
                 from google.genai import types
-                response = client.models.generate_content(
-                    model=self.model,
-                    contents=user_content,
-                    config=types.GenerateContentConfig(
-                        system_instruction=self._build_system_prompt(),
-                        max_output_tokens=1500,
-                    ),
+                config = types.GenerateContentConfig(
+                    system_instruction=self._build_system_prompt(),
+                    max_output_tokens=1500,
                 )
+                try:
+                    response = client.models.generate_content(
+                        model=self.model, contents=user_content, config=config,
+                    )
+                except Exception as primary_error:
+                    fallback_model = os.environ.get(
+                        "QSHIELD_GEMINI_FALLBACK_MODEL", "gemini-3.6-flash"
+                    )
+                    status = getattr(primary_error, "code", None)
+                    transient_server_error = (
+                        type(primary_error).__name__ == "ServerError"
+                        and status in (500, 502, 503, 504)
+                    )
+                    if not transient_server_error or fallback_model == self.model:
+                        raise
+                    response = client.models.generate_content(
+                        model=fallback_model, contents=user_content, config=config,
+                    )
+                    self.last_notice = (
+                        f"`{self.model}` returned a temporary server error; "
+                        f"Gemini answered using fallback model `{fallback_model}`."
+                    )
                 result = response.text
             else:
                 response = client.chat.completions.create(
@@ -206,15 +236,34 @@ Scores are decision-support estimates (0-100), NOT certified ratings."""
                 result = response.choices[0].message.content
             if not result:
                 raise ValueError("The AI provider returned an empty response")
+            self.last_response_from_ai = True
             return (
                 result + "\n\n---\n*⚠️ AI-generated recommendation — "
                 "requires review by qualified security professionals.*"
             )
         except Exception as e:
             error_type = type(e).__name__
+            status = getattr(e, "code", None)
+            if error_type in {"ConnectError", "TimeoutException", "ReadTimeout", "ConnectTimeout"}:
+                self.last_error = (
+                    "Could not connect to the AI provider. Check that this machine can reach "
+                    "Google's Gemini API and that any firewall or proxy allows it."
+                )
+            elif error_type == "ServerError" and status in (500, 502, 503, 504):
+                self.last_error = (
+                    f"Gemini returned a temporary server error (HTTP {status}) for both "
+                    "the selected model and its fallback. Please try again shortly."
+                )
+            elif error_type in {"AuthenticationError", "PermissionDenied", "ClientError"} or status in (401, 403):
+                self.last_error = (
+                    "The AI provider rejected the request. Verify the API key, its API access, "
+                    "and the configured model name."
+                )
+            else:
+                self.last_error = f"The AI request failed ({error_type})."
             return (
-                f"AI assistant encountered an error ({error_type}). "
-                f"Falling back to rule-based analysis.\n\n"
+                f"AI assistant could not complete the request ({error_type}); "
+                f"showing rule-based guidance instead.\n\n"
                 + self._fallback_response(prompt)
             )
 

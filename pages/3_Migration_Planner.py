@@ -214,7 +214,7 @@ st.markdown("### 🤖 AI Migration Assistant")
 
 ai = AIAssistant()
 if ai.is_available():
-    st.success(f"✅ {ai.provider_name} assistant ready · `{ai.model}`")
+    st.success(f"✅ {ai.provider_name} is configured · `{ai.model}`")
 else:
     st.info(
         "💡 AI assistant is not configured. Rule-based recommendations are active. "
@@ -266,4 +266,11 @@ if st.button("🤖 Ask AI Assistant", type="primary"):
     prompt = custom_prompt if custom_prompt else selected_prompt
     with st.spinner("Analyzing..."):
         response = ai.query(prompt, context=context_summary)
+    if ai.last_notice:
+        st.info(ai.last_notice)
+    if ai.last_error:
+        st.warning(
+            f"AI-generated analysis is unavailable for this request. {ai.last_error} "
+            "The response below is rule-based guidance, not a custom AI migration plan."
+        )
     st.markdown(response)
