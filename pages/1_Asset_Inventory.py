@@ -105,11 +105,44 @@ if st.session_state.get("confirm_clear_inventory"):
             st.rerun()
 
 # ── Upload Section ───────────────────────────────────────────────────
-with st.expander("📤 Upload Assets (CSV or JSON)", expanded=False):
+# ── Clear All Banner ─────────────────────────────────────────────────
+current_count = db.asset_count()
+if current_count > 0:
+    clear_col1, clear_col2 = st.columns([4, 1])
+    with clear_col1:
+        st.info(f"📦 **{current_count} assets** currently in inventory. Clear all before uploading a fresh dataset.")
+    with clear_col2:
+        if st.button("🗑️ Clear All Inventory", type="primary", use_container_width=True):
+            st.session_state["confirm_clear"] = True
+
+    if st.session_state.get("confirm_clear"):
+        st.warning("⚠️ This will permanently delete **all assets and assessments**. Are you sure?")
+        conf_col1, conf_col2 = st.columns(2)
+        with conf_col1:
+            if st.button("✅ Yes, Clear Everything", type="primary", use_container_width=True):
+                deleted = db.delete_all_assets()
+                db.log_activity("Cleared inventory", f"Deleted {deleted} assets")
+                st.session_state["confirm_clear"] = False
+                st.success(f"✅ Cleared {deleted} assets. Upload your new inventory below.")
+                st.rerun()
+        with conf_col2:
+            if st.button("❌ Cancel", use_container_width=True):
+                st.session_state["confirm_clear"] = False
+                st.rerun()
+
+st.markdown("---")
+
+with st.expander("📤 Upload Assets (CSV or JSON)", expanded=True):
     st.markdown(f"Upload a CSV or JSON file. Max size: {MAX_UPLOAD_MB} MB.")
     st.warning(
         "⚠️ **Do not upload confidential production inventories to a public demo.** "
         "Use synthetic or sanitized data only."
+    )
+
+    replace_existing = st.checkbox(
+        "🔄 Replace existing inventory (clear all before import)",
+        value=False,
+        help="When checked, all current assets will be deleted before importing the new file."
     )
 
     uploaded = st.file_uploader(
@@ -133,22 +166,34 @@ with st.expander("📤 Upload Assets (CSV or JSON)", expanded=False):
                 st.dataframe(err_df, use_container_width=True, height=200)
 
             if assets:
-                st.info(f"✅ {len(assets)} valid assets ready to import.")
-                if st.button("Import Valid Assets", type="primary"):
+                st.info(f"✅ **{len(assets)} valid assets** ready to import.")
+                if replace_existing:
+                    st.warning(f"⚠️ This will first delete all {db.asset_count()} existing assets, then import {len(assets)} new ones.")
+
+                if st.button("⬆️ Import & Run Risk Assessment", type="primary"):
+                    if replace_existing:
+                        deleted = db.delete_all_assets()
+                        db.log_activity("Cleared inventory before import", f"Deleted {deleted} assets")
+
                     count = import_assets_to_db(db, assets, source=uploaded.name)
-                    # Run assessment on imported assets
-                    for asset in assets:
+
+                    # Auto-run risk assessment on every imported asset
+                    progress = st.progress(0, text="Running risk assessment...")
+                    for i, asset in enumerate(assets):
                         d = asset.to_dict()
                         finding = analyze_asset(d)
                         score = compute_risk_score(d, finding)
                         db.save_assessment(d["asset_id"], finding.to_dict(), score.to_dict())
+                        progress.progress((i + 1) / len(assets), text=f"Assessing {d['asset_id']}...")
+
+                    progress.empty()
                     db.log_activity("Assessment completed", f"Assessed {count} imported assets", count)
-                    st.success(f"✅ Imported and assessed {count} assets.")
+                    st.success(f"✅ Imported and assessed **{count} assets**. Go to ⚡ Risk Assessment to view results.")
                     st.rerun()
             elif not errors:
                 st.warning("No valid assets found in file.")
 
-st.markdown("---")
+
 
 # ── Filters ──────────────────────────────────────────────────────────
 df = get_assets_dataframe(db)
